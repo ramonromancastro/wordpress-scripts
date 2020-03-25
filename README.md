@@ -11,5 +11,5 @@ $ git clone https://github.com/ramonromancastro/wordpress-scripts.git
 Este script se encarga de modificar los permisos de acceso al directorio de instalación de WordPress.
 
 #### Requisitos
- - Drupal Core 4.x, 5.x
+ - WordPress 4.x, 5.x
  - PHP 5.3 o superior
