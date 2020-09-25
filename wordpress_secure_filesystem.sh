@@ -25,8 +25,9 @@
 #  1.1	2016/03/29	wp-content/themes.
 #  1.2	2017/03/03	Mensajes identificados con colores para identificarlos mejor.
 #  1.4	2020/03/25	Primera versión publicada en GitHub.
+#  1.5	2020/09/25	Añadido el archivo index.php en wp-content/uploads/ para evitar listing en el directorio.
 
-VERSION=1.4
+VERSION=1.5
 
 # Constants
 declare -A colors=( [debug]="\e[35m" [info]="\e[39m" [ok]="\e[32m" [warning]="\e[93m" [error]="\e[91m" )
@@ -125,6 +126,16 @@ fi
 detected=$(grep -oP "^\\\$wp_version\s*=\s*['\"]\K(.*)(?=['\"])" "${path}/wp-includes/version.php")
 detected=${detected:-N/A}
 print_msg "debug" "WordPress detected: ${detected}\n"
+
+#
+# Add index.php at wp-content/uploads.
+#
+
+print_msg "info" "Creating index.php file in wp-content/uploads"
+if [ ! -f $path/wp-content/uploads/index.php ]; then
+  touch $path/wp-content/uploads/index.php
+fi
+check_error
 
 #
 # All files should be owned by your user account, and should be writable by you. Any file that needs write access from WordPress should be writable by the web server, if your hosting set up requires it, that may mean those files need to be group-owned by the user account used by the web server process.
