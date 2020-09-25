@@ -21,13 +21,14 @@
 
 # Hardening WordPress: https://wordpress.org/support/article/hardening-wordpress/
 # REVISIONES
-#  1.0	2016/03/29	Versión original.
-#  1.1	2016/03/29	wp-content/themes.
-#  1.2	2017/03/03	Mensajes identificados con colores para identificarlos mejor.
-#  1.4	2020/03/25	Primera versión publicada en GitHub.
-#  1.5	2020/09/25	Añadido el archivo index.php en wp-content/uploads/ para evitar listing en el directorio.
+#  1.0    2016/03/29  Versión original.
+#  1.1    2016/03/29  wp-content/themes.
+#  1.2    2017/03/03  Mensajes identificados con colores para identificarlos mejor.
+#  1.4    2020/03/25  Primera versión publicada en GitHub.
+#  1.5    2020/09/25  Añadido el archivo index.php en wp-content/uploads/ para evitar listing en el directorio.
+#  1.5.1  2020/09/25  Añadido control de acceso a xmlrpc.php y wp.cron.php.
 
-VERSION=1.5
+VERSION=1.5.1
 
 # Constants
 declare -A colors=( [debug]="\e[35m" [info]="\e[39m" [ok]="\e[32m" [warning]="\e[93m" [error]="\e[91m" )
@@ -136,6 +137,27 @@ if [ ! -f $path/wp-content/uploads/index.php ]; then
   touch $path/wp-content/uploads/index.php
 fi
 check_error
+
+#
+# Restrict access to sensible files via .htaccess
+#
+
+cat << EOF >> $path/.htaccess
+
+# Block WordPress sensible files from outside
+<FilesMatch "(xmlrpc|wp\-cron)\.php$">
+  <IfModule mod_authz_core.c>
+    Require local
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+    Allow from 127.0.0.1
+    Allow from ::1
+    Allow from localhost
+  </IfModule>
+</FilesMatch>
+EOF
 
 #
 # All files should be owned by your user account, and should be writable by you. Any file that needs write access from WordPress should be writable by the web server, if your hosting set up requires it, that may mean those files need to be group-owned by the user account used by the web server process.
