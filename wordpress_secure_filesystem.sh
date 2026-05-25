@@ -27,8 +27,9 @@
 #  1.4    2020/03/25  Primera versión publicada en GitHub.
 #  1.5    2020/09/25  Añadido el archivo index.php en wp-content/uploads/ para evitar listing en el directorio.
 #  1.5.1  2020/09/25  Añadido control de acceso a xmlrpc.php y wp.cron.php.
+#  1.5.2  2026/05/25  Optimizaciónd e los comandos find.
 
-VERSION=1.5.1
+VERSION=1.5.2
 
 # Constants
 declare -A colors=( [debug]="\e[35m" [info]="\e[39m" [ok]="\e[32m" [warning]="\e[93m" [error]="\e[91m" )
