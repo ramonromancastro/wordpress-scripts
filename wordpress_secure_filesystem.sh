@@ -172,11 +172,11 @@ check_error
 #
 
 print_msg "info" "Changing permissions of all directories to rwxr-x---"
-find $path -type d -exec chmod u=rwx,g=rx,o= '{}' \;
+find $path -type d -exec chmod u=rwx,g=rx,o= '{}' +
 check_error
 
 print_msg "info" "Changing permissions of all files to rw-r-----"
-find $path -type f -exec chmod u=rw,g=r,o= '{}' \;
+find $path -type f -exec chmod u=rw,g=r,o= '{}' +
 check_error
 
 #
@@ -189,11 +189,11 @@ check_error
 
 for x in $path/wp-admin; do
   print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' \;
+  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
   check_error
 
   print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' \;
+  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
   check_error
 done
 
@@ -207,11 +207,11 @@ check_error
 
 for x in $path/wp-includes; do
   print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' \;
+  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
   check_error
   
   print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' \;
+  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
   check_error
 done
 
@@ -225,11 +225,11 @@ check_error
 
 for x in $path/wp-content; do
   print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxrwx---"
-  find ${x} -type d -exec chmod u=rwx,g=rwx,o= '{}' \;
+  find ${x} -type d -exec chmod u=rwx,g=rwx,o= '{}' +
   check_error
   
   print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-rw----"  
-  find ${x} -type f -exec chmod u=rw,g=rw,o= '{}' \;
+  find ${x} -type f -exec chmod u=rw,g=rw,o= '{}' +
   check_error
 done
 
@@ -243,11 +243,11 @@ check_error
 
 for x in $path/wp-content/plugins; do
   print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' \;
+  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
   check_error
   
   print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' \;
+  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
   check_error
 done
 
@@ -261,11 +261,11 @@ check_error
 
 for x in $path/wp-content/themes; do
   print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' \;
+  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
   check_error
 
   print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' \;
+  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
   check_error
 done
 
@@ -274,11 +274,11 @@ done
 #
 
 print_msg "info" "Changing permissions of [.htaccess] files to rw-r-----"
-find $path -type f -name .htaccess -exec chmod u=rw,g=r,o= '{}' \;
+find $path -type f -name .htaccess -exec chmod u=rw,g=r,o= '{}' +
 check_error
 
 print_msg "info" "Changing permissions of [wp-config.php] files to rw-r-----"
-find $path -type f -name wp-config.php -exec chmod u=rw,g=r,o= '{}' \;
+find $path -type f -name wp-config.php -exec chmod u=rw,g=r,o= '{}' +
 check_error
 
 print_msg "info" "Done setting proper permissions on files and directories\n"
