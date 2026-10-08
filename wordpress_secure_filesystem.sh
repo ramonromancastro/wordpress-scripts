@@ -28,8 +28,9 @@
 #  1.5.1  2020/09/25  Añadido control de acceso a xmlrpc.php y wp.cron.php.
 #  1.5.2  2026/05/25  Optimización de comandos find y redundancias eliminadas.
 #  1.5.3  2026/10/08  Alineación con estándares de mínimo privilegio (SGID en uploads, base restrictiva 750/640).
+#  1.5.4  2026/10/08  Eliminada modificación de .htaccess y corregida detección de versión WP.
 
-VERSION=1.5.3
+VERSION=1.5.4
 
 # Constants
 declare -A colors=( [debug]="\e[35m" [info]="\e[39m" [ok]="\e[32m" [warning]="\e[93m" [error]="\e[91m" )
@@ -130,7 +131,8 @@ if [ -z "${group}" ] || ! getent group "${group}" &>/dev/null; then
   exit 1
 fi
 
-detected=$(grep -oP "^\$wp_version\s*=\s*['\"]\K(.*)(?=['\"])" "${path}/wp-includes/version.php" 2>/dev/null)
+# Detect WordPress version reliably
+detected=$(sed -n "s/^[[:space:]]*\$wp_version[[:space:]]*=[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" "${path}/wp-includes/version.php" 2>/dev/null)
 detected=${detected:-N/A}
 print_msg "debug" "WordPress detected: ${detected}\n"
 
@@ -146,56 +148,30 @@ if [ -d "${path}/wp-content/uploads" ]; then
 fi
 
 #
-# 2. Restrict access to sensitive files via .htaccess (Idempotent check)
-#
-print_msg "info" "Configuring security rules in .htaccess"
-if [ ! -f "${path}/.htaccess" ]; then
-  touch "${path}/.htaccess"
-fi
-
-if grep -q "xmlrpc|wp\-cron" "${path}/.htaccess"; then
-  print_msg "debug" " [rules already present]"
-  echo -e " ... ${colors[ok]}ok\e[0m"
-else
-  cat << 'EOF' >> "${path}/.htaccess"
-
-# Block WordPress sensitive files from outside
-<FilesMatch "(xmlrpc|wp\-cron)\.php$">
-  <IfModule mod_authz_core.c>
-    Require local
-  </IfModule>
-  <IfModule !mod_authz_core.c>
-    Order Deny,Allow
-    Deny from all
-    Allow from 127.0.0.1
-    Allow from ::1
-    Allow from localhost
-  </IfModule>
-</FilesMatch>
-EOF
-  check_error
-fi
-
-#
-# 3. Ownership: assign non-root owner and web server group
+# 2. Ownership: assign non-root owner and web server group
 #
 print_msg "info" "Changing ownership of all contents to ${user}:${group}"
 chown -R "${user}:${group}" "${path}"
 check_error
 
 #
-# 4. Base permissions: Strict principle of least privilege across the entire tree
-# Directories: 0750 (rwxr-x---)
-# Files: 0640 (rw-r-----)
+# 3. Base permissions: Strict principle of least privilege across the entire tree
 #
-print_msg "info" "Setting baseline permissions (0750 dirs, 0640 files)"
-find "${path}" -type d -exec chmod u=rwx,g=rx,o= '{}' +
+print_msg "info" "Stripping SUID/SGID bits across the entire tree"
+# Elimina u+s y g+s de la raíz y de cualquier subdirectorio o fichero
+chmod u-s,g-s "${path}"
+find "${path}" \( -perm -4000 -o -perm -2000 \) -exec chmod u-s,g-s '{}' +
 check_error
-find "${path}" -type f -exec chmod u=rw,g=r,o= '{}' +
+
+print_msg "info" "Setting baseline permissions (0750 dirs, 0640 files)"
+chmod 0750 "${path}"
+find "${path}" -type d -exec chmod 0750 '{}' +
+check_error
+find "${path}" -type f -exec chmod 0640 '{}' +
 check_error
 
 #
-# 5. Write exceptions: wp-content/uploads and wp-content/cache
+# 4. Write exceptions: wp-content/uploads and wp-content/cache
 # Needs group write access and SGID so newly generated/uploaded files inherit the web group.
 # Directories: 2770 (rwxrws---)
 # Files: 0660 (rw-rw----)
@@ -226,12 +202,23 @@ for target_file in "${cache_files[@]}"; do
 done
 
 #
-# 6. Sensitive files reinforcement
+# 5. Sensitive files reinforcement
 #
-print_msg "info" "Securing wp-config.php and .htaccess"
+print_msg "info" "Securing wp-config.php and .htaccess (if present)"
 chmod u=rw,g=r,o= "${path}/wp-config.php" 2>/dev/null
-chmod u=rw,g=r,o= "${path}/.htaccess" 2>/dev/null
+[ -f "${path}/.htaccess" ] && chmod u=rw,g=r,o= "${path}/.htaccess" 2>/dev/null
 check_error
 
+
+#
+# 6. SELinux Management
+# If SELinux is active (Enforcing or Permissive), ensure persistent fcontext rules
+#
+if command -v getenforce &>/dev/null && [ "$(getenforce)" != "Disabled" ]; then
+  print_msg "info" "SELinux detected ($(getenforce)). Configuring contexts..."
+
+  restorecon -RF "${path}"
+  check_error
+fi
 print_msg "info" "Done setting proper permissions on files and directories\n"
 exit 0
