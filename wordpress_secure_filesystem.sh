@@ -1,7 +1,6 @@
 #!/bin/bash
 
-
-# wordpress_secure_filesystem.sh secure WordPress filesystem installation.
+# wordpress_secure_filesystem.sh - Secure WordPress filesystem installation.
 #
 # Copyright (C) 2020  Ramón Román Castro <ramonromancastro@gmail.com>
 # 
@@ -27,9 +26,10 @@
 #  1.4    2020/03/25  Primera versión publicada en GitHub.
 #  1.5    2020/09/25  Añadido el archivo index.php en wp-content/uploads/ para evitar listing en el directorio.
 #  1.5.1  2020/09/25  Añadido control de acceso a xmlrpc.php y wp.cron.php.
-#  1.5.2  2026/05/25  Optimizaciónd e los comandos find.
+#  1.5.2  2026/05/25  Optimización de comandos find y redundancias eliminadas.
+#  1.5.3  2026/10/08  Alineación con estándares de mínimo privilegio (SGID en uploads, base restrictiva 750/640).
 
-VERSION=1.5.2
+VERSION=1.5.3
 
 # Constants
 declare -A colors=( [debug]="\e[35m" [info]="\e[39m" [ok]="\e[32m" [warning]="\e[93m" [error]="\e[91m" )
@@ -44,9 +44,9 @@ check_error() {
 }
 
 print_msg() {
-	msg_color=$1
-	msg_text=$2
-	echo -en "${colors[$msg_color]}${msg_text}\e[0m"
+  msg_color=$1
+  msg_text=$2
+  echo -en "${colors[$msg_color]}${msg_text}\e[0m"
 }
 
 print_help() {
@@ -70,14 +70,15 @@ HELP
 exit 0
 }
 
-if [ $(id -u) != 0 ]; then
+# Root check
+if [ "$(id -u)" -ne 0 ]; then
   print_msg "warning" "You must run this with sudo or root.\n"
   print_help
   exit 1
 fi
 
-detected_user=$(httpd -t -D DUMP_RUN_CFG | grep "^User:" | cut -d '"' -f 2 2> /dev/null)
-detected_group=$(httpd -t -D DUMP_RUN_CFG | grep "^Group:" | cut -d '"' -f 2 2> /dev/null)
+detected_user=$(httpd -t -D DUMP_RUN_CFG 2>/dev/null | grep "^User:" | cut -d '"' -f 2)
+detected_group=$(httpd -t -D DUMP_RUN_CFG 2>/dev/null | grep "^Group:" | cut -d '"' -f 2)
 
 print_msg "debug" "Apache HTTP Server user detected: ${detected_user}\n"
 print_msg "debug" "Apache HTTP Server group detected: ${detected_group}\n"
@@ -91,7 +92,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --path=*)
         path="${1#*=}"
-		path="${path%/}"
+        path="${path%/}"
         ;;
     --user=*)
         user="${1#*=}"
@@ -99,53 +100,66 @@ while [ "$#" -gt 0 ]; do
     --group=*)
         group="${1#*=}"
         ;;
-    --help) print_help;;
+    --help) 
+        print_help
+        ;;
     *)
-	  print_msg "warning" "Invalid argument, run --help for valid arguments.\n"
-      exit 1
+        print_msg "warning" "Invalid argument, run --help for valid arguments.\n"
+        exit 1
+        ;;
   esac
   shift
 done
 
+# Validation
 if [ -z "${path}" ] || [ ! -d "${path}/wp-admin" ] || [ ! -f "${path}/wp-config.php" ]; then
   print_msg "warning" "Please provide a valid WordPress path.\n"
   print_help
   exit 1
 fi
 
-if [ -z "${user}" ] || [[ $(id -un "${user}" 2> /dev/null) != "${user}" ]]; then
+if [ -z "${user}" ] || ! id -u "${user}" &>/dev/null; then
   print_msg "warning" "Please provide a valid user.\n"
   print_help
   exit 1
 fi
 
-if [ ! $(getent group "${group}") ]; then
+if [ -z "${group}" ] || ! getent group "${group}" &>/dev/null; then
   print_msg "warning" "Please provide a valid group.\n"
   print_help
   exit 1
 fi
 
-detected=$(grep -oP "^\\\$wp_version\s*=\s*['\"]\K(.*)(?=['\"])" "${path}/wp-includes/version.php")
+detected=$(grep -oP "^\$wp_version\s*=\s*['\"]\K(.*)(?=['\"])" "${path}/wp-includes/version.php" 2>/dev/null)
 detected=${detected:-N/A}
 print_msg "debug" "WordPress detected: ${detected}\n"
 
 #
-# Add index.php at wp-content/uploads.
+# 1. Add index.php at wp-content/uploads to avoid directory listing
 #
-
-print_msg "info" "Creating index.php file in wp-content/uploads"
-if [ ! -f $path/wp-content/uploads/index.php ]; then
-  touch $path/wp-content/uploads/index.php
+if [ -d "${path}/wp-content/uploads" ]; then
+  print_msg "info" "Ensuring index.php file in wp-content/uploads"
+  if [ ! -f "${path}/wp-content/uploads/index.php" ]; then
+    touch "${path}/wp-content/uploads/index.php"
+  fi
+  check_error
 fi
-check_error
 
 #
-# Restrict access to sensible files via .htaccess
+# 2. Restrict access to sensitive files via .htaccess (Idempotent check)
 #
+print_msg "info" "Configuring security rules in .htaccess"
+if [ ! -f "${path}/.htaccess" ]; then
+  touch "${path}/.htaccess"
+fi
 
-cat << EOF >> $path/.htaccess
+if grep -q "xmlrpc|wp\-cron" "${path}/.htaccess"; then
+  print_msg "debug" " [rules already present]"
+  echo -e " ... ${colors[ok]}ok\e[0m"
+else
+  cat << 'EOF' >> "${path}/.htaccess"
 
-# Block WordPress sensible files from outside
+# Block WordPress sensitive files from outside
 <FilesMatch "(xmlrpc|wp\-cron)\.php$">
   <IfModule mod_authz_core.c>
     Require local
@@ -159,127 +173,65 @@ cat << EOF >> $path/.htaccess
   </IfModule>
 </FilesMatch>
 EOF
+  check_error
+fi
 
 #
-# All files should be owned by your user account, and should be writable by you. Any file that needs write access from WordPress should be writable by the web server, if your hosting set up requires it, that may mean those files need to be group-owned by the user account used by the web server process.
+# 3. Ownership: assign non-root owner and web server group
 #
-
 print_msg "info" "Changing ownership of all contents to ${user}:${group}"
-chown -R ${user}:${group} $path
+chown -R "${user}:${group}" "${path}"
 check_error
 
 #
-# The root WordPress directory: all files should be writable only by your user account, except .htaccess if you want WordPress to automatically generate rewrite rules for you.
+# 4. Base permissions: Strict principle of least privilege across the entire tree
+# Directories: 0750 (rwxr-x---)
+# Files: 0640 (rw-r-----)
 #
-
-print_msg "info" "Changing permissions of all directories to rwxr-x---"
-find $path -type d -exec chmod u=rwx,g=rx,o= '{}' +
+print_msg "info" "Setting baseline permissions (0750 dirs, 0640 files)"
+find "${path}" -type d -exec chmod u=rwx,g=rx,o= '{}' +
+check_error
+find "${path}" -type f -exec chmod u=rw,g=r,o= '{}' +
 check_error
 
-print_msg "info" "Changing permissions of all files to rw-r-----"
-find $path -type f -exec chmod u=rw,g=r,o= '{}' +
-check_error
-
 #
-# The WordPress administration area: all files should be writable only by your user account.
+# 5. Write exceptions: wp-content/uploads and wp-content/cache
+# Needs group write access and SGID so newly generated/uploaded files inherit the web group.
+# Directories: 2770 (rwxrws---)
+# Files: 0660 (rw-rw----)
 #
+writable_dirs=("${path}/wp-content/uploads" "${path}/wp-content/cache")
 
-print_msg "info" "Changing permissions of [wp-admin] directory to rwxr-x---"
-chmod u=rwx,g=rx,o= $path/wp-admin
-check_error
+for target_dir in "${writable_dirs[@]}"; do
+  if [ -d "${target_dir}" ]; then
+    folder_name="${target_dir##*/}"
+    print_msg "info" "Setting writable permissions with SGID on wp-content/${folder_name}"
+    find "${target_dir}" -type d -exec chmod u=rwx,g=rwxs,o= '{}' +
+    check_error
+    find "${target_dir}" -type f -exec chmod u=rw,g=rw,o= '{}' +
+    check_error
+  fi
+done
 
-for x in $path/wp-admin; do
-  print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
-  check_error
+# Soporte para WP Super Cache / plugins de caché en wp-content
+cache_files=("${path}/wp-content/advanced-cache.php" "${path}/wp-content/wp-cache-config.php")
 
-  print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
-  check_error
+for target_file in "${cache_files[@]}"; do
+  if [ -f "${target_file}" ]; then
+    file_name="${target_file##*/}"
+    print_msg "info" "Allowing write access for web server on wp-content/${file_name}"
+    chmod u=rw,g=rw,o= "${target_file}"
+    check_error
+  fi
 done
 
 #
-# The bulk of WordPress application logic: all files should be writable only by your user account.
+# 6. Sensitive files reinforcement
 #
-
-print_msg "info" "Changing permissions of [wp-includes] directory to rwxr-x---"
-chmod u=rwx,g=rx,o= $path/wp-includes
-check_error
-
-for x in $path/wp-includes; do
-  print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
-  check_error
-  
-  print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
-  check_error
-done
-
-#
-# User-supplied content: intended to be writable by your user account and the web server process.
-#
-
-print_msg "info" "Changing permissions of [wp-content] directory to rwxrwx---"
-chmod u=rwx,g=rwx,o= $path/wp-content
-check_error
-
-for x in $path/wp-content; do
-  print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxrwx---"
-  find ${x} -type d -exec chmod u=rwx,g=rwx,o= '{}' +
-  check_error
-  
-  print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-rw----"  
-  find ${x} -type f -exec chmod u=rw,g=rw,o= '{}' +
-  check_error
-done
-
-#
-# Plugin files: all files should be writable only by your user account.
-#
-
-print_msg "info" "Changing permissions of [wp-content/plugins] directory to rwxr-x---"
-chmod u=rwx,g=rx,o= $path/wp-content/plugins
-check_error
-
-for x in $path/wp-content/plugins; do
-  print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
-  check_error
-  
-  print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
-  check_error
-done
-
-#
-# Theme files. If you want to use the built-in theme editor, all files need to be writable by the web server process. If you do not want to use the built-in theme editor, all files can be writable only by your user account.
-#
-
-print_msg "info" "Changing permissions of [wp-content/themes] directory to rwxr-x---"
-chmod u=rwx,g=rx,o= $path/wp-content/themes
-check_error
-
-for x in $path/wp-content/themes; do
-  print_msg "info" "Changing permissions of all directories inside [${x/$path/}] directory to rwxr-x---"
-  find ${x} -type d -exec chmod u=rwx,g=rx,o= '{}' +
-  check_error
-
-  print_msg "info" "Changing permissions of all files inside [${x/$path/}] directory to rw-r-----"  
-  find ${x} -type f -exec chmod u=rw,g=r,o= '{}' +
-  check_error
-done
-
-#
-# The root WordPress directory: all files should be writable only by your user account, except .htaccess if you want WordPress to automatically generate rewrite rules for you.
-#
-
-print_msg "info" "Changing permissions of [.htaccess] files to rw-r-----"
-find $path -type f -name .htaccess -exec chmod u=rw,g=r,o= '{}' +
-check_error
-
-print_msg "info" "Changing permissions of [wp-config.php] files to rw-r-----"
-find $path -type f -name wp-config.php -exec chmod u=rw,g=r,o= '{}' +
+print_msg "info" "Securing wp-config.php and .htaccess"
+chmod u=rw,g=r,o= "${path}/wp-config.php" 2>/dev/null
+chmod u=rw,g=r,o= "${path}/.htaccess" 2>/dev/null
 check_error
 
 print_msg "info" "Done setting proper permissions on files and directories\n"
+exit 0
